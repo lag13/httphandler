@@ -106,21 +106,39 @@ func (e errResponseWriter) Write([]byte) (int, error) {
 func (e errResponseWriter) WriteHeader(int) {
 }
 
+// fnToHandleErr is a struct with a method to handle an error and
+// records state when that method is called. Some functions in this
+// package call a function like that in their execution if something
+// goes wrong so having this construct makes it easier to check
+// whether that function was invoked or not.
+type fnToHandleErr struct {
+	wasInvoked bool
+	gotReq     *http.Request
+	gotErr     error
+}
+
+func (f *fnToHandleErr) handleError(r *http.Request, err error) {
+	f.wasInvoked = true
+	f.gotReq = r
+	f.gotErr = err
+}
+
 // TestWriterFails tests that when writing the response fails we call
-// a function on the Writer and pass it the error.
+// a function on the Writer and pass it the request and error.
 func TestWriterFails(t *testing.T) {
-	var errPassedToFn error = nil
-	errFn := func(e error) {
-		errPassedToFn = e
-	}
+	fnErrHandler := fnToHandleErr{}
 	sut := httphandler.Writer{
 		Presenter:     mockPresenter{},
-		WriteFailedFn: errFn,
+		WriteFailedFn: fnErrHandler.handleError,
 	}
+	req := httptest.NewRequest("does-not-matter", "/does-not-matter", nil)
 
-	sut.ServeHTTP(errResponseWriter{}, httptest.NewRequest("does-not-matter", "/does-not-matter", nil))
+	sut.ServeHTTP(errResponseWriter{}, req)
 
-	if got, want := fmt.Sprintf("%v", errPassedToFn), "non-nil error occurred when writing"; got != want {
+	if got, want := fnErrHandler.gotReq, req; got != want {
+		t.Errorf("got req: %#v, wanted %#v", got, want)
+	}
+	if got, want := fmt.Sprintf("%v", fnErrHandler.gotErr), "non-nil error occurred when writing"; got != want {
 		t.Errorf("got error msg: %s, wanted error msg: %s", got, want)
 	}
 }
@@ -186,8 +204,8 @@ func TestDispatcher(t *testing.T) {
 			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
 		}
 		sut := httphandler.Dispatcher{
-			MethodToPresenter:  test.methodToPresenter,
-			MethodNotSupported: httphandler.PresenterFunc(test.notFoundFn),
+			MethodToPresenter:      test.methodToPresenter,
+			MethodNotSupportedPres: httphandler.PresenterFunc(test.notFoundFn),
 		}
 
 		gotResp := sut.PresentHTTP(test.request)
@@ -217,25 +235,16 @@ func (m mockErrPresenter) ErrPresentHTTP(r *http.Request) (httphandler.Response,
 	}, m.err
 }
 
-type errFnWasInvoked struct {
-	wasInvoked bool
-	gotErr     error
-}
-
-func (e *errFnWasInvoked) handleError(err error) {
-	e.wasInvoked = true
-	e.gotErr = err
-}
-
-// TestErrHandlerSucceeds tests that the ErrHandler Presenter will return the
+// TestErrHandler tests that the ErrHandler Presenter will return the
 // expected response whether or not an error occurred when generating
-// the response.
-func TestErrHandlerSucceds(t *testing.T) {
+// the response and that a function is called to handle the error if
+// the error occurs.
+func TestErrHandler(t *testing.T) {
 	tests := []struct {
 		testScenario     string
 		errPresenter     mockErrPresenter
-		errHandler       errFnWasInvoked
-		presenterIfErr   httphandler.Presenter
+		fnErrHandler     fnToHandleErr
+		defaultPresenter httphandler.Presenter
 		request          *http.Request
 		wantResp         httphandler.Response
 		wantErrFnInvoked bool
@@ -247,9 +256,9 @@ func TestErrHandlerSucceds(t *testing.T) {
 				status: 1,
 				err:    nil,
 			},
-			errHandler:     errFnWasInvoked{},
-			presenterIfErr: nil,
-			request:        httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
+			fnErrHandler:     fnToHandleErr{},
+			defaultPresenter: nil,
+			request:          httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 1,
 				Headers:    nil,
@@ -259,27 +268,44 @@ func TestErrHandlerSucceds(t *testing.T) {
 			wantErrMsgPassed: "",
 		},
 		{
-			testScenario: "the ErrPresenter returns an error, a function is called to handle the error, and the expected response is written",
+			testScenario: "the ErrPresenter returns a response and an error and the response gets returned and a function is called to handle the error",
 			errPresenter: mockErrPresenter{
 				status: 3,
 				err:    errors.New("non-nil error"),
 			},
-			errHandler: errFnWasInvoked{},
-			presenterIfErr: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+			fnErrHandler:     fnToHandleErr{},
+			defaultPresenter: nil,
+			request:          httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
+			wantResp: httphandler.Response{
+				StatusCode: 3,
+				Headers:    nil,
+				Body:       []byte("got PATCH request on path /really/cool/path"),
+			},
+			wantErrFnInvoked: true,
+			wantErrMsgPassed: "non-nil error",
+		},
+		{
+			testScenario: "the ErrPresenter returns no response and an error and a default response is generated and a function is called to handle the error",
+			errPresenter: mockErrPresenter{
+				status: 0,
+				err:    errors.New("another non-nil error"),
+			},
+			fnErrHandler: fnToHandleErr{},
+			defaultPresenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 				return httphandler.Response{
 					StatusCode: 599,
 					Headers:    nil,
 					Body:       []byte(fmt.Sprintf("unexpected error on %s %s", r.Method, r.URL.Path)),
 				}
 			}),
-			request: httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
+			request: httptest.NewRequest(http.MethodDelete, "/country/roads", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 599,
 				Headers:    nil,
-				Body:       []byte("unexpected error on PATCH /really/cool/path"),
+				Body:       []byte("unexpected error on DELETE /country/roads"),
 			},
 			wantErrFnInvoked: true,
-			wantErrMsgPassed: "non-nil error",
+			wantErrMsgPassed: "another non-nil error",
 		},
 	}
 	for i, test := range tests {
@@ -289,8 +315,8 @@ func TestErrHandlerSucceds(t *testing.T) {
 		}
 		sut := httphandler.ErrHandler{
 			ErrPresenter: test.errPresenter,
-			OnErrFn:      test.errHandler.handleError,
-			RespWhenErr:  test.presenterIfErr,
+			OnErrFn:      test.fnErrHandler.handleError,
+			DefaultPres:  test.defaultPresenter,
 		}
 
 		gotResp := sut.PresentHTTP(test.request)
@@ -304,11 +330,14 @@ func TestErrHandlerSucceds(t *testing.T) {
 		if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
 			errorMsg("got body: %s, wanted: %s", got, want)
 		}
-		if got, want := test.errHandler.wasInvoked, test.wantErrFnInvoked; got != want {
+		if got, want := test.fnErrHandler.wasInvoked, test.wantErrFnInvoked; got != want {
 			errorMsg("error fn being invoked was %v", got)
 		}
 		if test.wantErrFnInvoked {
-			if got, want := fmt.Sprintf("%+v", test.errHandler.gotErr), test.wantErrMsgPassed; got != want {
+			if got, want := test.fnErrHandler.gotReq, test.request; got != want {
+				t.Errorf("got req: %#v, wanted %#v", got, want)
+			}
+			if got, want := fmt.Sprintf("%+v", test.fnErrHandler.gotErr), test.wantErrMsgPassed; got != want {
 				errorMsg("passed error msg was: %s, wanted: %s", got, want)
 			}
 		}

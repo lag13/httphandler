@@ -28,7 +28,7 @@ type Presenter interface {
 // NOT be used.
 type Writer struct {
 	Presenter     Presenter
-	WriteFailedFn func(error)
+	WriteFailedFn func(*http.Request, error)
 }
 
 // ServeHTTP writes the response recieved from a Presenter.
@@ -41,15 +41,15 @@ func (h Writer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	if _, err := w.Write(resp.Body); err != nil {
-		h.WriteFailedFn(err)
+		h.WriteFailedFn(r, err)
 	}
 }
 
 // Dispatcher is a Presenter which dispatches to a Presenter based on
 // the http method. The zero value of this struct can NOT be used.
 type Dispatcher struct {
-	MethodToPresenter  map[string]Presenter
-	MethodNotSupported Presenter
+	MethodToPresenter      map[string]Presenter
+	MethodNotSupportedPres Presenter
 }
 
 // PresentHTTP dispatches to another presenter based off the request's
@@ -57,7 +57,7 @@ type Dispatcher struct {
 func (d Dispatcher) PresentHTTP(r *http.Request) Response {
 	p, ok := d.MethodToPresenter[r.Method]
 	if !ok {
-		return d.MethodNotSupported.PresentHTTP(r)
+		return d.MethodNotSupportedPres.PresentHTTP(r)
 	}
 	return p.PresentHTTP(r)
 }
@@ -82,17 +82,22 @@ type ErrPresenter interface {
 // this struct can NOT be used.
 type ErrHandler struct {
 	ErrPresenter ErrPresenter
-	OnErrFn      func(error)
-	RespWhenErr  Presenter
+	OnErrFn      func(*http.Request, error)
+	DefaultPres  Presenter
 }
 
 // PresentHTTP which will return the response from an ErrPresenter if
-// there is no error and a specific response if an error is returned.
+// that response's status code is non-zero otherwise it will generate
+// some default response. If an error is also returned from the
+// ErrPresenter then a function is called to handle that error
+// (presumably log it).
 func (e ErrHandler) PresentHTTP(r *http.Request) Response {
 	resp, err := e.ErrPresenter.ErrPresentHTTP(r)
 	if err != nil {
-		e.OnErrFn(err)
-		return e.RespWhenErr.PresentHTTP(r)
+		e.OnErrFn(r, err)
 	}
-	return resp
+	if resp.StatusCode != 0 {
+		return resp
+	}
+	return e.DefaultPres.PresentHTTP(r)
 }

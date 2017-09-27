@@ -28,8 +28,8 @@ func Example() {
 	})
 	firstWriter := httphandler.Writer{
 		Presenter: firstPresenter,
-		WriteFailedFn: func(e error) {
-			log.Fatal(e)
+		WriteFailedFn: func(r *http.Request, e error) {
+			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
 		},
 	}
 	router.Handle("/first", firstWriter)
@@ -43,14 +43,14 @@ func Example() {
 		MethodToPresenter: map[string]httphandler.Presenter{
 			http.MethodGet: secondPresenter,
 		},
-		MethodNotSupported: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+		MethodNotSupportedPres: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{Body: []byte("http method not supported")}
 		}),
 	}
 	secondWriter := httphandler.Writer{
 		Presenter: secondDispatcher,
-		WriteFailedFn: func(e error) {
-			log.Fatal(e)
+		WriteFailedFn: func(r *http.Request, e error) {
+			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
 		},
 	}
 	router.Handle("/second", secondWriter)
@@ -61,15 +61,15 @@ func Example() {
 	})
 	thirdPresenter := httphandler.ErrHandler{
 		ErrPresenter: myErrPresenter{},
-		OnErrFn: func(e error) {
-			log.Print(e)
+		OnErrFn: func(r *http.Request, e error) {
+			log.Printf("unexpected error on %s %s", r.Method, r.URL.Path, e)
 		},
-		RespWhenErr: thirdPresenterWhenErr,
+		DefaultPres: thirdPresenterWhenErr,
 	}
 	thirdWriter := httphandler.Writer{
 		Presenter: thirdPresenter,
-		WriteFailedFn: func(e error) {
-			log.Fatal(e)
+		WriteFailedFn: func(r *http.Request, e error) {
+			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
 		},
 	}
 	router.Handle("/third", thirdWriter)
