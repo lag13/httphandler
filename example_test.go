@@ -54,17 +54,19 @@ func Example() {
 		},
 	}
 	router.Handle("/second", secondWriter)
-	thirdPresenterWhenErr := httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
-		return httphandler.Response{
-			Body: []byte("an unexpected error occured"),
-		}
-	})
-	thirdPresenter := httphandler.ErrHandler{
+	thirdErrHandler := httphandler.ErrHandler{
 		ErrPresenter: myErrPresenter{},
 		OnErrFn: func(r *http.Request, e error) {
 			log.Printf("unexpected error on %s %s", r.Method, r.URL.Path, e)
 		},
-		DefaultPres: thirdPresenterWhenErr,
+	}
+	thirdPresenter := httphandler.DefaultResp{
+		Presenter: thirdErrHandler,
+		DefaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
+			return httphandler.Response{
+				Body: []byte("an unexpected error occured"),
+			}
+		}),
 	}
 	thirdWriter := httphandler.Writer{
 		Presenter: thirdPresenter,

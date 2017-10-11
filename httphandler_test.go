@@ -36,6 +36,14 @@ func TestWriterSucceeds(t *testing.T) {
 		wantBody       string
 	}{
 		{
+			testScenario:   "not specifying a status code defaults to 200",
+			presenter:      mockPresenter{},
+			request:        httptest.NewRequest(http.MethodPatch, "/hello-world", nil),
+			wantStatusCode: 200,
+			wantHeaders:    http.Header(map[string][]string{}),
+			wantBody:       "got request with method PATCH on path /hello-world",
+		},
+		{
 			testScenario: "writing the response succeeds",
 			presenter: mockPresenter{
 				statusCode: 432,
@@ -143,6 +151,71 @@ func TestWriterFails(t *testing.T) {
 	}
 }
 
+// TestDefaultResp tests that DefaultResp will produce the expected
+// response from a presenter or a default response if that presenter
+// returns a response with a status code of 0.
+func TestDefaultResp(t *testing.T) {
+	tests := []struct {
+		testScenario     string
+		presenter        httphandler.Presenter
+		defaultPresenter httphandler.Presenter
+		request          *http.Request
+		wantResp         httphandler.Response
+	}{
+		{
+			testScenario: "the response comes from the presenter",
+			presenter: mockPresenter{
+				statusCode: 101,
+			},
+			defaultPresenter: nil,
+			request:          httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
+			wantResp: httphandler.Response{
+				StatusCode: 101,
+				Headers:    nil,
+				Body:       []byte("got request with method GET on path /whats-up-doc"),
+			},
+		},
+		{
+			testScenario: "the response is defaulted",
+			presenter:    mockPresenter{},
+			defaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: 500,
+					Body:       []byte("default response!"),
+				}
+			}),
+			request: httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
+			wantResp: httphandler.Response{
+				StatusCode: 500,
+				Headers:    nil,
+				Body:       []byte("default response!"),
+			},
+		},
+	}
+	for i, test := range tests {
+		errorMsg := func(str string, args ...interface{}) {
+			t.Helper()
+			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
+		}
+		sut := httphandler.DefaultResp{
+			Presenter:        test.presenter,
+			DefaultPresenter: test.defaultPresenter,
+		}
+
+		gotResp := sut.PresentHTTP(test.request)
+
+		if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
+			errorMsg("got status code %v, wanted %v", got, want)
+		}
+		if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+			errorMsg("got header mapping %+v, wanted %+v", got, want)
+		}
+		if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
+			errorMsg("got body: %s, wanted: %s", got, want)
+		}
+	}
+}
+
 // TestDispatcher tests that the Dispatcher dispatches to the
 // appropriate presenter based off the http method and if there is
 // none then returns the expected response.
@@ -236,29 +309,25 @@ func (m mockErrPresenter) ErrPresentHTTP(r *http.Request) (httphandler.Response,
 }
 
 // TestErrHandler tests that the ErrHandler Presenter will return the
-// expected response whether or not an error occurred when generating
-// the response and that a function is called to handle the error if
-// the error occurs.
+// expected response and handle an error if one occurrs.
 func TestErrHandler(t *testing.T) {
 	tests := []struct {
 		testScenario     string
 		errPresenter     mockErrPresenter
 		fnErrHandler     fnToHandleErr
-		defaultPresenter httphandler.Presenter
 		request          *http.Request
 		wantResp         httphandler.Response
 		wantErrFnInvoked bool
 		wantErrMsgPassed string
 	}{
 		{
-			testScenario: "the ErrPresenter returns a response which gets returned",
+			testScenario: "no error occurrs and the expected response is returned",
 			errPresenter: mockErrPresenter{
 				status: 1,
 				err:    nil,
 			},
-			fnErrHandler:     fnToHandleErr{},
-			defaultPresenter: nil,
-			request:          httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
+			fnErrHandler: fnToHandleErr{},
+			request:      httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 1,
 				Headers:    nil,
@@ -268,44 +337,20 @@ func TestErrHandler(t *testing.T) {
 			wantErrMsgPassed: "",
 		},
 		{
-			testScenario: "the ErrPresenter returns a response and an error and the response gets returned and a function is called to handle the error",
+			testScenario: "an error occurrs and the expected response is returned",
 			errPresenter: mockErrPresenter{
-				status: 3,
+				status: 0,
 				err:    errors.New("non-nil error"),
 			},
-			fnErrHandler:     fnToHandleErr{},
-			defaultPresenter: nil,
-			request:          httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
+			fnErrHandler: fnToHandleErr{},
+			request:      httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
 			wantResp: httphandler.Response{
-				StatusCode: 3,
+				StatusCode: 0,
 				Headers:    nil,
 				Body:       []byte("got PATCH request on path /really/cool/path"),
 			},
 			wantErrFnInvoked: true,
 			wantErrMsgPassed: "non-nil error",
-		},
-		{
-			testScenario: "the ErrPresenter returns no response and an error and a default response is generated and a function is called to handle the error",
-			errPresenter: mockErrPresenter{
-				status: 0,
-				err:    errors.New("another non-nil error"),
-			},
-			fnErrHandler: fnToHandleErr{},
-			defaultPresenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
-				return httphandler.Response{
-					StatusCode: 599,
-					Headers:    nil,
-					Body:       []byte(fmt.Sprintf("unexpected error on %s %s", r.Method, r.URL.Path)),
-				}
-			}),
-			request: httptest.NewRequest(http.MethodDelete, "/country/roads", nil),
-			wantResp: httphandler.Response{
-				StatusCode: 599,
-				Headers:    nil,
-				Body:       []byte("unexpected error on DELETE /country/roads"),
-			},
-			wantErrFnInvoked: true,
-			wantErrMsgPassed: "another non-nil error",
 		},
 	}
 	for i, test := range tests {
@@ -316,7 +361,6 @@ func TestErrHandler(t *testing.T) {
 		sut := httphandler.ErrHandler{
 			ErrPresenter: test.errPresenter,
 			OnErrFn:      test.fnErrHandler.handleError,
-			DefaultPres:  test.defaultPresenter,
 		}
 
 		gotResp := sut.PresentHTTP(test.request)
