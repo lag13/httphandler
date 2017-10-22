@@ -23,6 +23,7 @@ func ExampleWriter() {
 	writer.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hello", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
+
 	// Output: status code: 200
 	// body: hello world!
 }
@@ -42,6 +43,7 @@ func ExampleDefaultResp() {
 	resp := defaultResp.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
+
 	// Output: status code: 500
 	// body: since the presenter did not return any response this default response is getting generated
 }
@@ -69,6 +71,7 @@ func ExampleDispatcher() {
 	resp = dispatcher.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello-there", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
+
 	// Output: status code: 200
 	// body: made it to a handler
 	// status code: 405
@@ -90,6 +93,7 @@ func ExampleErrHandler() {
 	resp := errHandler.PresentHTTP(httptest.NewRequest(http.MethodGet, "/hello", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
+
 	// Output: on GET /hello endpoint got error: a bad error
 	// status code: 500
 	// body: something went wrong

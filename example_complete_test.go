@@ -16,13 +16,13 @@ import (
 // if something goes wrong, and logging of errors happens in one place
 // instead of having to be done by each http handler. These feel like
 // nice simplifications.
-func newHandler(methodToErrPresenter map[string]httphandler.ErrPresenter) http.Handler {
+func newHandler(mthdToErrPres map[string]httphandler.ErrPresenter) http.Handler {
 	methodToPresenter := map[string]httphandler.Presenter{}
-	for method, errPresenter := range methodToErrPresenter {
+	for method, errPresenter := range mthdToErrPres {
 		methodToPresenter[method] = httphandler.ErrHandler{
 			ErrPresenter: errPresenter,
 			HandleErr: func(r *http.Request, err error) {
-				fmt.Printf("on %s %s endpoint error happened: %v\n", r.Method, r.URL.Path, err)
+				fmt.Printf("logging err on %s: %v\n", r.URL, err)
 			},
 		}
 	}
@@ -31,7 +31,7 @@ func newHandler(methodToErrPresenter map[string]httphandler.ErrPresenter) http.H
 		MethodNotSupportedPres: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{
 				StatusCode: http.StatusMethodNotAllowed,
-				Body:       []byte(fmt.Sprintf("the method %s is not allowed on this endpoint", r.Method)),
+				Body:       []byte(fmt.Sprintf("method %s is not allowed", r.Method)),
 			}
 		}),
 	}
@@ -47,75 +47,82 @@ func newHandler(methodToErrPresenter map[string]httphandler.ErrPresenter) http.H
 	return httphandler.Writer{
 		Presenter: defaultResp,
 		HandleErr: func(r *http.Request, err error) {
-			fmt.Printf("writing response to the %s %s request: %v\n", r.Method, r.URL, err)
+			fmt.Printf("writing response to %s %s request: %v\n", r.Method, r.URL, err)
 		},
 	}
 }
 
-type getSomeData struct{}
+type getData struct{}
 
-func (g getSomeData) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
-	return httphandler.Response{StatusCode: 200, Body: []byte("here is some data")}, nil
+func (g getData) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
+	return httphandler.Response{
+		StatusCode: 200,
+		Body:       []byte("here is some data"),
+	}, nil
 }
 
-type createSomeDataAndError struct{}
+type createData struct{}
 
-func (c createSomeDataAndError) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
-	return httphandler.Response{}, errors.New("some error occurred when creating data")
+func (c createData) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
+	return httphandler.Response{}, errors.New("error when creating data")
 }
 
-type updateSomeDataAndError struct{}
+type updateData struct{}
 
-func (u updateSomeDataAndError) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
-	return httphandler.Response{StatusCode: 400, Body: []byte("some custom error response")}, errors.New("some error occurred when updating data")
+func (u updateData) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
+	return httphandler.Response{
+		StatusCode: 400,
+		Body:       []byte("some custom error response"),
+	}, errors.New("error when updating data")
 }
 
 func Example() {
-	getSomeDataHandler := newHandler(map[string]httphandler.ErrPresenter{
-		http.MethodGet: getSomeData{},
+	getHandler := newHandler(map[string]httphandler.ErrPresenter{
+		http.MethodGet: getData{},
 	})
-	createSomeDataHandler := newHandler(map[string]httphandler.ErrPresenter{
-		http.MethodPost: createSomeDataAndError{},
+	createHandler := newHandler(map[string]httphandler.ErrPresenter{
+		http.MethodPost: createData{},
 	})
-	updateSomeDataHandler := newHandler(map[string]httphandler.ErrPresenter{
-		http.MethodPut: updateSomeDataAndError{},
+	updateHandler := newHandler(map[string]httphandler.ErrPresenter{
+		http.MethodPut: updateData{},
 	})
 
 	w := httptest.NewRecorder()
-	fmt.Println("getting some data")
-	getSomeDataHandler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hello", nil))
+	fmt.Println("getting data")
+	getHandler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hello", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
 
 	w = httptest.NewRecorder()
-	fmt.Println("getting some data with the wrong http method")
-	getSomeDataHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/hello", nil))
+	fmt.Println("getting data with the wrong http method")
+	getHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/hello", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
 
 	w = httptest.NewRecorder()
-	fmt.Println("an error occurs when creating some data and a default error response is returned")
-	createSomeDataHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/hello-world", nil))
+	fmt.Println("creating data, error occurs, and a default response is returned")
+	createHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/hey", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
 
 	w = httptest.NewRecorder()
-	fmt.Println("an error occurs when creating some data and a custom error response is returned")
-	updateSomeDataHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/hello-world/1", nil))
+	fmt.Println("updating data, error occurs, and custom response is returned")
+	updateHandler.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/hey/1", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
-	// Output: getting some data
+
+	// Output: getting data
 	// status code: 200
 	// body: here is some data
-	// getting some data with the wrong http method
+	// getting data with the wrong http method
 	// status code: 405
-	// body: the method POST is not allowed on this endpoint
-	// an error occurs when creating some data and a default error response is returned
-	// on POST /hello-world endpoint error happened: some error occurred when creating data
+	// body: method POST is not allowed
+	// creating data, error occurs, and a default response is returned
+	// logging err on /hey: error when creating data
 	// status code: 500
-	// body: unexpected error on the POST /hello-world endpoint
-	// an error occurs when creating some data and a custom error response is returned
-	// on PUT /hello-world/1 endpoint error happened: some error occurred when updating data
+	// body: unexpected error on the POST /hey endpoint
+	// updating data, error occurs, and custom response is returned
+	// logging err on /hey/1: error when updating data
 	// status code: 400
 	// body: some custom error response
 }
