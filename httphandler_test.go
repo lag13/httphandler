@@ -11,91 +11,85 @@ import (
 	"github.com/lag13/httphandler"
 )
 
-type mockPresenter struct {
-	statusCode int
-	headers    http.Header
-}
-
-func (m mockPresenter) PresentHTTP(r *http.Request) httphandler.Response {
-	return httphandler.Response{
-		StatusCode: m.statusCode,
-		Headers:    m.headers,
-		Body:       []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
-	}
-}
-
 // TestWriterSucceeds tests that the Writer http.Handler successfully
-// writes the response that it recieves.
+// writes the response that it receives.
 func TestWriterSucceeds(t *testing.T) {
 	tests := []struct {
-		testScenario   string
-		presenter      mockPresenter
+		name           string
+		presenter      httphandler.Presenter
 		request        *http.Request
 		wantStatusCode int
 		wantHeaders    http.Header
 		wantBody       string
 	}{
 		{
-			testScenario:   "not specifying a status code defaults to 200",
-			presenter:      mockPresenter{},
+			name: "a 0 status code defaults to 200",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					Body: []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+				}
+			}),
 			request:        httptest.NewRequest(http.MethodPatch, "/hello-world", nil),
 			wantStatusCode: 200,
 			wantHeaders:    http.Header(map[string][]string{}),
 			wantBody:       "got request with method PATCH on path /hello-world",
 		},
 		{
-			testScenario: "writing the response succeeds",
-			presenter: mockPresenter{
-				statusCode: 432,
-				headers:    nil,
-			},
+			name: "writing the response succeeds",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: 432,
+					Body:       []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+				}
+			}),
 			request:        httptest.NewRequest(http.MethodGet, "/hello-world", nil),
 			wantStatusCode: 432,
 			wantHeaders:    http.Header(map[string][]string{}),
 			wantBody:       "got request with method GET on path /hello-world",
 		},
 		{
-			testScenario: "writing another the response succeeds",
-			presenter: mockPresenter{
-				statusCode: 500,
-				headers: http.Header(map[string][]string{
-					"Authorization":   []string{"Basic: lkjasldfkj:laksjdf"},
-					"Content-Type":    []string{"application/json"},
-					"multiple-values": []string{"one", "two", "three"},
-				}),
-			},
+			name: "writing a response with headers succeeds",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: 500,
+					Headers: http.Header{
+						"Authorization":   []string{"Basic: lkjasldfkj:laksjdf"},
+						"Content-Type":    []string{"application/json"},
+						"multiple-values": []string{"one", "two", "three"},
+					},
+					Body: []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+				}
+			}),
 			request:        httptest.NewRequest(http.MethodPost, "/hey/there", nil),
 			wantStatusCode: 500,
 			wantHeaders: http.Header(map[string][]string{
-				"Authorization":   []string{"Basic: lkjasldfkj:laksjdf"},
-				"Content-Type":    []string{"application/json"},
-				"Multiple-Values": []string{"one", "two", "three"},
+				"Authorization":   {"Basic: lkjasldfkj:laksjdf"},
+				"Content-Type":    {"application/json"},
+				"Multiple-Values": {"one", "two", "three"},
 			}),
 			wantBody: "got request with method POST on path /hey/there",
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
-		w := httptest.NewRecorder()
-		sut := httphandler.Writer{
-			Presenter:     test.presenter,
-			WriteFailedFn: nil,
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			sut := httphandler.Writer{
+				Presenter: test.presenter,
+				HandleErr: nil,
+			}
 
-		sut.ServeHTTP(w, test.request)
+			sut.ServeHTTP(w, test.request)
 
-		if got, want := w.Code, test.wantStatusCode; got != want {
-			errorMsg("got status code %v, wanted %v", got, want)
-		}
-		if got, want := w.HeaderMap, test.wantHeaders; !reflect.DeepEqual(got, want) {
-			errorMsg("got header mapping %#v, wanted %#v", got, want)
-		}
-		if got, want := w.Body.String(), test.wantBody; got != want {
-			errorMsg("got body: %s, wanted: %s", got, want)
-		}
+			if got, want := w.Code, test.wantStatusCode; got != want {
+				t.Errorf("got status code %v, wanted %v", got, want)
+			}
+			if got, want := w.HeaderMap, test.wantHeaders; !reflect.DeepEqual(got, want) {
+				t.Errorf("got header mapping %#v, wanted %#v", got, want)
+			}
+			if got, want := w.Body.String(), test.wantBody; got != want {
+				t.Errorf("got body: %s, wanted: %s", got, want)
+			}
+		})
 	}
 }
 
@@ -136,8 +130,8 @@ func (f *fnToHandleErr) handleError(r *http.Request, err error) {
 func TestWriterFails(t *testing.T) {
 	fnErrHandler := fnToHandleErr{}
 	sut := httphandler.Writer{
-		Presenter:     mockPresenter{},
-		WriteFailedFn: fnErrHandler.handleError,
+		Presenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response { return httphandler.Response{} }),
+		HandleErr: fnErrHandler.handleError,
 	}
 	req := httptest.NewRequest("does-not-matter", "/does-not-matter", nil)
 
@@ -156,17 +150,20 @@ func TestWriterFails(t *testing.T) {
 // returns a response with a status code of 0.
 func TestDefaultResp(t *testing.T) {
 	tests := []struct {
-		testScenario     string
+		name             string
 		presenter        httphandler.Presenter
 		defaultPresenter httphandler.Presenter
 		request          *http.Request
 		wantResp         httphandler.Response
 	}{
 		{
-			testScenario: "the response comes from the presenter",
-			presenter: mockPresenter{
-				statusCode: 101,
-			},
+			name: "response comes from the presenter",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: 101,
+					Body:       []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+				}
+			}),
 			defaultPresenter: nil,
 			request:          httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
 			wantResp: httphandler.Response{
@@ -176,8 +173,12 @@ func TestDefaultResp(t *testing.T) {
 			},
 		},
 		{
-			testScenario: "the response is defaulted",
-			presenter:    mockPresenter{},
+			name: "the response is defaulted",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					Body: []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+				}
+			}),
 			defaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
 				return httphandler.Response{
 					StatusCode: 500,
@@ -192,27 +193,25 @@ func TestDefaultResp(t *testing.T) {
 			},
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
-		sut := httphandler.DefaultResp{
-			Presenter:        test.presenter,
-			DefaultPresenter: test.defaultPresenter,
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sut := httphandler.DefaultResp{
+				Presenter:        test.presenter,
+				DefaultPresenter: test.defaultPresenter,
+			}
 
-		gotResp := sut.PresentHTTP(test.request)
+			gotResp := sut.PresentHTTP(test.request)
 
-		if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
-			errorMsg("got status code %v, wanted %v", got, want)
-		}
-		if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
-			errorMsg("got header mapping %+v, wanted %+v", got, want)
-		}
-		if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
-			errorMsg("got body: %s, wanted: %s", got, want)
-		}
+			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
+				t.Errorf("got status code %v, wanted %v", got, want)
+			}
+			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+				t.Errorf("got header mapping %+v, wanted %+v", got, want)
+			}
+			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
+				t.Errorf("got body: %s, wanted: %s", got, want)
+			}
+		})
 	}
 }
 
@@ -221,16 +220,21 @@ func TestDefaultResp(t *testing.T) {
 // none then returns the expected response.
 func TestDispatcher(t *testing.T) {
 	tests := []struct {
-		testScenario      string
+		name              string
 		methodToPresenter map[string]httphandler.Presenter
 		notFoundFn        func(*http.Request) httphandler.Response
 		request           *http.Request
 		wantResp          httphandler.Response
 	}{
 		{
-			testScenario: "dispatches on a GET request",
+			name: "dispatches on a GET request",
 			methodToPresenter: map[string]httphandler.Presenter{
-				http.MethodGet: mockPresenter{statusCode: 100, headers: nil},
+				http.MethodGet: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+					return httphandler.Response{
+						StatusCode: 100,
+						Body:       []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+					}
+				}),
 			},
 			notFoundFn: nil,
 			request:    httptest.NewRequest(http.MethodGet, "/hello-there", nil),
@@ -241,9 +245,14 @@ func TestDispatcher(t *testing.T) {
 			},
 		},
 		{
-			testScenario: "dispatches on a POST request",
+			name: "dispatches on a POST request",
 			methodToPresenter: map[string]httphandler.Presenter{
-				http.MethodPost: mockPresenter{statusCode: 101, headers: nil},
+				http.MethodPost: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+					return httphandler.Response{
+						StatusCode: 101,
+						Body:       []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
+					}
+				}),
 			},
 			notFoundFn: nil,
 			request:    httptest.NewRequest(http.MethodPost, "/hello-there-buddy", nil),
@@ -254,7 +263,7 @@ func TestDispatcher(t *testing.T) {
 			},
 		},
 		{
-			testScenario:      "the recieved method is not recognized so a function is called to generate the response",
+			name:              "unrecognized http method",
 			methodToPresenter: map[string]httphandler.Presenter{},
 			notFoundFn: func(r *http.Request) httphandler.Response {
 				return httphandler.Response{
@@ -271,49 +280,34 @@ func TestDispatcher(t *testing.T) {
 			},
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
-		sut := httphandler.Dispatcher{
-			MethodToPresenter:      test.methodToPresenter,
-			MethodNotSupportedPres: httphandler.PresenterFunc(test.notFoundFn),
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sut := httphandler.Dispatcher{
+				MethodToPresenter:      test.methodToPresenter,
+				MethodNotSupportedPres: httphandler.PresenterFunc(test.notFoundFn),
+			}
 
-		gotResp := sut.PresentHTTP(test.request)
+			gotResp := sut.PresentHTTP(test.request)
 
-		if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
-			errorMsg("got status code %v, wanted %v", got, want)
-		}
-		if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
-			errorMsg("got header mapping %+v, wanted %+v", got, want)
-		}
-		if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
-			errorMsg("got body: %s, wanted: %s", got, want)
-		}
+			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
+				t.Errorf("got status code %v, wanted %v", got, want)
+			}
+			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+				t.Errorf("got header mapping %+v, wanted %+v", got, want)
+			}
+			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
+				t.Errorf("got body: %s, wanted: %s", got, want)
+			}
+		})
 	}
-}
-
-type mockErrPresenter struct {
-	status int
-	err    error
-}
-
-func (m mockErrPresenter) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
-	return httphandler.Response{
-		StatusCode: m.status,
-		Headers:    nil,
-		Body:       []byte(fmt.Sprintf("got %s request on path %s", r.Method, r.URL.Path)),
-	}, m.err
 }
 
 // TestErrHandler tests that the ErrHandler Presenter will return the
 // expected response and handle an error if one occurrs.
 func TestErrHandler(t *testing.T) {
 	tests := []struct {
-		testScenario     string
-		errPresenter     mockErrPresenter
+		name             string
+		errPresenter     httphandler.ErrPresenter
 		fnErrHandler     fnToHandleErr
 		request          *http.Request
 		wantResp         httphandler.Response
@@ -321,11 +315,13 @@ func TestErrHandler(t *testing.T) {
 		wantErrMsgPassed string
 	}{
 		{
-			testScenario: "no error occurrs and the expected response is returned",
-			errPresenter: mockErrPresenter{
-				status: 1,
-				err:    nil,
-			},
+			name: "no error occur and got expected response",
+			errPresenter: httphandler.ErrPresenterFunc(func(r *http.Request) (httphandler.Response, error) {
+				return httphandler.Response{
+					StatusCode: 1,
+					Body:       []byte(fmt.Sprintf("got %s request on path %s", r.Method, r.URL.Path)),
+				}, nil
+			}),
 			fnErrHandler: fnToHandleErr{},
 			request:      httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
 			wantResp: httphandler.Response{
@@ -337,11 +333,12 @@ func TestErrHandler(t *testing.T) {
 			wantErrMsgPassed: "",
 		},
 		{
-			testScenario: "an error occurrs and the expected response is returned",
-			errPresenter: mockErrPresenter{
-				status: 0,
-				err:    errors.New("non-nil error"),
-			},
+			name: "error occur and got expected response",
+			errPresenter: httphandler.ErrPresenterFunc(func(r *http.Request) (httphandler.Response, error) {
+				return httphandler.Response{
+					Body: []byte(fmt.Sprintf("got %s request on path %s", r.Method, r.URL.Path)),
+				}, errors.New("non-nil error")
+			}),
 			fnErrHandler: fnToHandleErr{},
 			request:      httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
 			wantResp: httphandler.Response{
@@ -353,37 +350,35 @@ func TestErrHandler(t *testing.T) {
 			wantErrMsgPassed: "non-nil error",
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
-		sut := httphandler.ErrHandler{
-			ErrPresenter: test.errPresenter,
-			OnErrFn:      test.fnErrHandler.handleError,
-		}
-
-		gotResp := sut.PresentHTTP(test.request)
-
-		if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
-			errorMsg("got status code %v, wanted %v", got, want)
-		}
-		if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
-			errorMsg("got header mapping %+v, wanted %+v", got, want)
-		}
-		if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
-			errorMsg("got body: %s, wanted: %s", got, want)
-		}
-		if got, want := test.fnErrHandler.wasInvoked, test.wantErrFnInvoked; got != want {
-			errorMsg("error fn being invoked was %v", got)
-		}
-		if test.wantErrFnInvoked {
-			if got, want := test.fnErrHandler.gotReq, test.request; got != want {
-				t.Errorf("got req: %#v, wanted %#v", got, want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sut := httphandler.ErrHandler{
+				ErrPresenter: test.errPresenter,
+				HandleErr:    test.fnErrHandler.handleError,
 			}
-			if got, want := fmt.Sprintf("%+v", test.fnErrHandler.gotErr), test.wantErrMsgPassed; got != want {
-				errorMsg("passed error msg was: %s, wanted: %s", got, want)
+
+			gotResp := sut.PresentHTTP(test.request)
+
+			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
+				t.Errorf("got status code %v, wanted %v", got, want)
 			}
-		}
+			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+				t.Errorf("got header mapping %+v, wanted %+v", got, want)
+			}
+			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
+				t.Errorf("got body: %s, wanted: %s", got, want)
+			}
+			if got, want := test.fnErrHandler.wasInvoked, test.wantErrFnInvoked; got != want {
+				t.Errorf("error fn being invoked was %v", got)
+			}
+			if test.wantErrFnInvoked {
+				if got, want := test.fnErrHandler.gotReq, test.request; got != want {
+					t.Errorf("got req: %#v, wanted %#v", got, want)
+				}
+				if got, want := fmt.Sprintf("%+v", test.fnErrHandler.gotErr), test.wantErrMsgPassed; got != want {
+					t.Errorf("passed error msg was: %s, wanted: %s", got, want)
+				}
+			}
+		})
 	}
 }

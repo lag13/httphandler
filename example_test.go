@@ -2,78 +2,95 @@ package httphandler_test
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"net/http/httptest"
 
 	"github.com/lag13/httphandler"
 )
 
-type myErrPresenter struct{}
-
-func (m myErrPresenter) ErrPresentHTTP(r *http.Request) (httphandler.Response, error) {
-	return httphandler.Response{}, errors.New("non-nil error")
+func ExampleWriter() {
+	writer := httphandler.Writer{
+		Presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+			return httphandler.Response{Body: []byte("hello world!")}
+		}),
+		HandleErr: func(r *http.Request, err error) {
+			log.Printf("error on %s %s endpoint: %v", r.Method, r.URL.String(), err)
+		},
+	}
+	w := httptest.NewRecorder()
+	writer.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hello", nil))
+	fmt.Println("status code:", w.Code)
+	fmt.Printf("body: %s\n", w.Body.String())
+	// Output: status code: 200
+	// body: hello world!
 }
 
-func Example() {
-	router := http.NewServeMux()
-	firstPresenter := httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
-		headers := http.Header(map[string][]string{})
-		headers.Add("Content-Type", "application/json")
-		headers.Add("Authorization", "Basic: alskjdflsa:lllllll")
-		return httphandler.Response{
-			StatusCode: http.StatusInternalServerError,
-			Headers:    headers,
-			Body:       []byte("hello there!\n"),
-		}
-	})
-	firstWriter := httphandler.Writer{
-		Presenter: firstPresenter,
-		WriteFailedFn: func(r *http.Request, e error) {
-			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
-		},
-	}
-	router.Handle("/first", firstWriter)
-	secondPresenter := httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
-		return httphandler.Response{
-			StatusCode: http.StatusOK,
-			Body:       []byte("nice day isn't it!\n"),
-		}
-	})
-	secondDispatcher := httphandler.Dispatcher{
-		MethodToPresenter: map[string]httphandler.Presenter{
-			http.MethodGet: secondPresenter,
-		},
-		MethodNotSupportedPres: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
-			return httphandler.Response{Body: []byte("http method not supported")}
+func ExampleDefaultResp() {
+	defaultResp := httphandler.DefaultResp{
+		Presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+			return httphandler.Response{}
 		}),
-	}
-	secondWriter := httphandler.Writer{
-		Presenter: secondDispatcher,
-		WriteFailedFn: func(r *http.Request, e error) {
-			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
-		},
-	}
-	router.Handle("/second", secondWriter)
-	thirdErrHandler := httphandler.ErrHandler{
-		ErrPresenter: myErrPresenter{},
-		OnErrFn: func(r *http.Request, e error) {
-			log.Printf("unexpected error on %s %s", r.Method, r.URL.Path, e)
-		},
-	}
-	thirdPresenter := httphandler.DefaultResp{
-		Presenter: thirdErrHandler,
-		DefaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
+		DefaultPresenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{
-				Body: []byte("an unexpected error occured"),
+				StatusCode: 500,
+				Body:       []byte("since the presenter did not return any response this default response is getting generated"),
 			}
 		}),
 	}
-	thirdWriter := httphandler.Writer{
-		Presenter: thirdPresenter,
-		WriteFailedFn: func(r *http.Request, e error) {
-			log.Fatalf("writing response to %s %s request failed with err: %v", r.Method, r.URL.Path, e)
+	resp := defaultResp.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello", nil))
+	fmt.Println("status code:", resp.StatusCode)
+	fmt.Printf("body: %s\n", resp.Body)
+	// Output: status code: 500
+	// body: since the presenter did not return any response this default response is getting generated
+}
+
+func ExampleDispatcher() {
+	dispatcher := httphandler.Dispatcher{
+		MethodToPresenter: map[string]httphandler.Presenter{
+			http.MethodGet: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: http.StatusOK,
+					Body:       []byte("made it to a handler"),
+				}
+			}),
+		},
+		MethodNotSupportedPres: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+			return httphandler.Response{
+				StatusCode: http.StatusMethodNotAllowed,
+				Body:       []byte("unsupported method"),
+			}
+		}),
+	}
+	resp := dispatcher.PresentHTTP(httptest.NewRequest(http.MethodGet, "/hello-there", nil))
+	fmt.Println("status code:", resp.StatusCode)
+	fmt.Printf("body: %s\n", resp.Body)
+	resp = dispatcher.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello-there", nil))
+	fmt.Println("status code:", resp.StatusCode)
+	fmt.Printf("body: %s\n", resp.Body)
+	// Output: status code: 200
+	// body: made it to a handler
+	// status code: 405
+	// body: unsupported method
+}
+
+func ExampleErrHandler() {
+	errHandler := httphandler.ErrHandler{
+		ErrPresenter: httphandler.ErrPresenterFunc(func(r *http.Request) (httphandler.Response, error) {
+			return httphandler.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       []byte("something went wrong"),
+			}, errors.New("a bad error")
+		}),
+		HandleErr: func(r *http.Request, err error) {
+			fmt.Printf("on %s %s endpoint got error: %v\n", r.Method, r.URL.String(), err)
 		},
 	}
-	router.Handle("/third", thirdWriter)
-	log.Fatal(http.ListenAndServe("localhost:8080", router))
+	resp := errHandler.PresentHTTP(httptest.NewRequest(http.MethodGet, "/hello", nil))
+	fmt.Println("status code:", resp.StatusCode)
+	fmt.Printf("body: %s\n", resp.Body)
+	// Output: on GET /hello endpoint got error: a bad error
+	// status code: 500
+	// body: something went wrong
 }
