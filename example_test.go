@@ -16,11 +16,11 @@ func ExampleWriter() {
 			return httphandler.Response{Body: []byte("hello world!")}
 		}),
 		HandleErr: func(r *http.Request, err error) {
-			log.Printf("error on %s %s endpoint: %v", r.Method, r.URL.String(), err)
+			log.Printf("error on %s %s endpoint: %v", r.Method, r.URL, err)
 		},
 	}
 	w := httptest.NewRecorder()
-	writer.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/hello", nil))
+	writer.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/w", nil))
 	fmt.Println("status code:", w.Code)
 	fmt.Printf("body: %s\n", w.Body.String())
 
@@ -36,16 +36,16 @@ func ExampleDefaultResp() {
 		DefaultPresenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{
 				StatusCode: 500,
-				Body:       []byte("since the presenter did not return any response this default response is getting generated"),
+				Body:       []byte("generating default response"),
 			}
 		}),
 	}
-	resp := defaultResp.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello", nil))
+	resp := defaultResp.PresentHTTP(httptest.NewRequest(http.MethodPost, "/dr", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
 
 	// Output: status code: 500
-	// body: since the presenter did not return any response this default response is getting generated
+	// body: generating default response
 }
 
 func ExampleDispatcher() {
@@ -65,10 +65,10 @@ func ExampleDispatcher() {
 			}
 		}),
 	}
-	resp := dispatcher.PresentHTTP(httptest.NewRequest(http.MethodGet, "/hello-there", nil))
+	resp := dispatcher.PresentHTTP(httptest.NewRequest(http.MethodGet, "/d", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
-	resp = dispatcher.PresentHTTP(httptest.NewRequest(http.MethodPost, "/hello-there", nil))
+	resp = dispatcher.PresentHTTP(httptest.NewRequest(http.MethodPost, "/d", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
 
@@ -87,14 +87,14 @@ func ExampleErrHandler() {
 			}, errors.New("a bad error")
 		}),
 		HandleErr: func(r *http.Request, err error) {
-			fmt.Printf("on %s %s endpoint got error: %v\n", r.Method, r.URL.String(), err)
+			fmt.Printf("on %s %s endpoint got error: %v\n", r.Method, r.URL, err)
 		},
 	}
-	resp := errHandler.PresentHTTP(httptest.NewRequest(http.MethodGet, "/hello", nil))
+	resp := errHandler.PresentHTTP(httptest.NewRequest(http.MethodGet, "/eh", nil))
 	fmt.Println("status code:", resp.StatusCode)
 	fmt.Printf("body: %s\n", resp.Body)
 
-	// Output: on GET /hello endpoint got error: a bad error
+	// Output: on GET /eh endpoint got error: a bad error
 	// status code: 500
 	// body: something went wrong
 }

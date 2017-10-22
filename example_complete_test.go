@@ -40,7 +40,7 @@ func newHandler(mthdToErrPres map[string]httphandler.ErrPresenter) http.Handler 
 		DefaultPresenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{
 				StatusCode: http.StatusInternalServerError,
-				Body:       []byte(fmt.Sprintf("unexpected error on the %s %s endpoint", r.Method, r.URL)),
+				Body:       []byte("unexpected error occurred"),
 			}
 		}),
 	}
@@ -120,7 +120,7 @@ func Example() {
 	// creating data, error occurs, and a default response is returned
 	// logging err on /hey: error when creating data
 	// status code: 500
-	// body: unexpected error on the POST /hey endpoint
+	// body: unexpected error occurred
 	// updating data, error occurs, and custom response is returned
 	// logging err on /hey/1: error when updating data
 	// status code: 400

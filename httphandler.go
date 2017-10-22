@@ -44,10 +44,14 @@ to illustrate what I mean:
 The duplicate logic would always consist of some or all of the
 following (all of which can be seen in the above code sample):
 
-	1. Dispatch based off the request's method
-	2. Log an error if one occurred
-	3. Construct a response if an error occurs (when maybe the response should always be a generic "500 something went wrong" for a given API)
-	4. Write the response (seems minor but you have to remember to add headers before calling WriteHeader() and similar "oddities")
+	1. Dispatch based off the request's method.
+	2. Log an error if one occurred.
+	3. Construct a response if an error occurs (when maybe the
+           response should always be a generic "500 something went
+           wrong" for a given API).
+	4. Write the response (seems minor but you have to remember to
+           add headers before calling WriteHeader() and similar
+           "oddities").
 
 This package was created to help address those 4 specific issues and
 has a type to handle each case. These types can be composed together
@@ -158,14 +162,14 @@ type DefaultResp struct {
 }
 
 // PresentHTTP returns the response from a Presenter if the returned
-// status code is non-zero otherwise it returns the response from a
+// response is the zero value otherwise it returns the response from a
 // different Presenter.
 func (d DefaultResp) PresentHTTP(r *http.Request) Response {
 	resp := d.Presenter.PresentHTTP(r)
-	if resp.StatusCode != 0 {
-		return resp
+	if resp.StatusCode == 0 && resp.Headers == nil && resp.Body == nil {
+		return d.DefaultPresenter.PresentHTTP(r)
 	}
-	return d.DefaultPresenter.PresentHTTP(r)
+	return resp
 }
 
 // Dispatcher is a Presenter which dispatches to another Presenter

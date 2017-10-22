@@ -173,11 +173,29 @@ func TestDefaultResp(t *testing.T) {
 			},
 		},
 		{
-			name: "the response is defaulted",
+			name: "presenter returns just body",
 			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 				return httphandler.Response{
 					Body: []byte(fmt.Sprintf("got request with method %s on path %s", r.Method, r.URL.Path)),
 				}
+			}),
+			defaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
+				return httphandler.Response{
+					StatusCode: 500,
+					Body:       []byte("default response!"),
+				}
+			}),
+			request: httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
+			wantResp: httphandler.Response{
+				StatusCode: 0,
+				Headers:    nil,
+				Body:       []byte("got request with method GET on path /whats-up-doc"),
+			},
+		},
+		{
+			name: "default response is returned",
+			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
+				return httphandler.Response{}
 			}),
 			defaultPresenter: httphandler.PresenterFunc(func(*http.Request) httphandler.Response {
 				return httphandler.Response{
