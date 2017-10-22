@@ -85,7 +85,7 @@ Presenter:
 
 Since the response ultimately needs to get written this gave rise to
 the "Writer" type who's sole purpose is to call
-Presenter.PresentHTTP() and write the returned response. Writer is an
+Presenter.PresentHTTP() and write the returned response. Writer is a
 http.Handler and it serves as the "root" of any handlers created using
 this package. With these two types as starting points this package
 defines 3 instances of Presenter's which can be composed together with
