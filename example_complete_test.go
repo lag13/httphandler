@@ -31,7 +31,7 @@ func newHandler(mthdToErrPres map[string]httphandler.ErrPresenter) http.Handler 
 		MethodNotSupportedPres: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 			return httphandler.Response{
 				StatusCode: http.StatusMethodNotAllowed,
-				Body:       []byte(fmt.Sprintf("method %s is not allowed", r.Method)),
+				Body:       []byte(fmt.Sprintf("method %s not allowed", r.Method)),
 			}
 		}),
 	}
@@ -44,12 +44,7 @@ func newHandler(mthdToErrPres map[string]httphandler.ErrPresenter) http.Handler 
 			}
 		}),
 	}
-	return httphandler.Writer{
-		Presenter: defaultResp,
-		HandleErr: func(r *http.Request, err error) {
-			fmt.Printf("writing response to %s %s request: %v\n", r.Method, r.URL, err)
-		},
-	}
+	return httphandler.Writer{Presenter: defaultResp}
 }
 
 type getData struct{}
@@ -116,7 +111,7 @@ func Example() {
 	// body: here is some data
 	// getting data with the wrong http method
 	// status code: 405
-	// body: method POST is not allowed
+	// body: method POST not allowed
 	// creating data, error occurs, and a default response is returned
 	// logging err on /hey: error when creating data
 	// status code: 500

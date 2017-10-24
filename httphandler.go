@@ -122,13 +122,16 @@ type Presenter interface {
 	PresentHTTP(*http.Request) Response
 }
 
-// Writer writes the response returned from a Presenter.
+// Writer writes the response returned from a Presenter and calls
+// HandleErr if the error returned from Write() is non-nil.
 type Writer struct {
 	Presenter Presenter
 	HandleErr func(*http.Request, error)
 }
 
-// ServeHTTP writes the response received from a Presenter.
+// ServeHTTP writes the response received from a Presenter and passes
+// the error from Write() into HandleErr. If HandleErr is not
+// specified then the error from Write() is ignored.
 func (h Writer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := h.Presenter.PresentHTTP(r)
 	for header, values := range resp.Headers {
@@ -136,7 +139,7 @@ func (h Writer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add(header, value)
 		}
 	}
-	// If Write() is called on a http.ResponseWriter before
+	// If http.ResponseWriter.Write() is called before
 	// WriteHeader() then a 200 status code is automatically
 	// written. I stay consistent with that behavior by having
 	// this if statement.
@@ -144,10 +147,7 @@ func (h Writer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp.StatusCode = 200
 	}
 	w.WriteHeader(resp.StatusCode)
-	// TODO: This error is never checked in the examples I've seen
-	// (including the standard documentation) so maybe I should
-	// default it to do nothing if no function is provided?
-	if _, err := w.Write(resp.Body); err != nil {
+	if _, err := w.Write(resp.Body); err != nil && h.HandleErr != nil {
 		h.HandleErr(r, err)
 	}
 }

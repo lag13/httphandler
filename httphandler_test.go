@@ -126,7 +126,8 @@ func (f *fnToHandleErr) handleError(r *http.Request, err error) {
 }
 
 // TestWriterFails tests that when writing the response fails we call
-// a function on the Writer and pass it the request and error.
+// a function on the Writer and pass it the request and error and if
+// no function to handle the error was given then nothing is done.
 func TestWriterFails(t *testing.T) {
 	fnErrHandler := fnToHandleErr{}
 	sut := httphandler.Writer{
@@ -143,6 +144,10 @@ func TestWriterFails(t *testing.T) {
 	if got, want := fmt.Sprintf("%v", fnErrHandler.gotErr), "non-nil error occurred when writing"; got != want {
 		t.Errorf("got error msg: %s, wanted error msg: %s", got, want)
 	}
+
+	// Making sure this does not panic.
+	sut.HandleErr = nil
+	sut.ServeHTTP(errResponseWriter{}, req)
 }
 
 // TestDefaultResp tests that DefaultResp will produce the expected
