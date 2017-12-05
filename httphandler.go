@@ -44,7 +44,8 @@ to illustrate what I mean:
 The duplicate logic would always consist of some or all of the
 following (all of which can be seen in the above code sample):
 
-	1. Dispatch based off the request's method.
+	1. Dispatch based off the request's method and construct a
+	   response if the request's method is incorrect.
 	2. Log an error if one occurred.
 	3. Construct a response if an error occurs (when maybe the
            response should always be a generic "500 something went
@@ -111,7 +112,7 @@ import (
 // Response gets written in response to a request.
 type Response struct {
 	StatusCode int
-	Headers    http.Header
+	Header     http.Header
 	Body       []byte
 }
 
@@ -134,7 +135,7 @@ type Writer struct {
 // specified then the error from Write() is ignored.
 func (h Writer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	resp := h.Presenter.PresentHTTP(r)
-	for header, values := range resp.Headers {
+	for header, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(header, value)
 		}
@@ -166,7 +167,7 @@ type DefaultResp struct {
 // different Presenter.
 func (d DefaultResp) PresentHTTP(r *http.Request) Response {
 	resp := d.Presenter.PresentHTTP(r)
-	if resp.StatusCode == 0 && resp.Headers == nil && resp.Body == nil {
+	if resp.StatusCode == 0 && resp.Header == nil && resp.Body == nil {
 		return d.DefaultPresenter.PresentHTTP(r)
 	}
 	return resp

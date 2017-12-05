@@ -19,7 +19,7 @@ func TestWriterSucceeds(t *testing.T) {
 		presenter      httphandler.Presenter
 		request        *http.Request
 		wantStatusCode int
-		wantHeaders    http.Header
+		wantHeader     http.Header
 		wantBody       string
 	}{
 		{
@@ -31,7 +31,7 @@ func TestWriterSucceeds(t *testing.T) {
 			}),
 			request:        httptest.NewRequest(http.MethodPatch, "/hello-world", nil),
 			wantStatusCode: 200,
-			wantHeaders:    http.Header(map[string][]string{}),
+			wantHeader:     http.Header(map[string][]string{}),
 			wantBody:       "got request with method PATCH on path /hello-world",
 		},
 		{
@@ -44,7 +44,7 @@ func TestWriterSucceeds(t *testing.T) {
 			}),
 			request:        httptest.NewRequest(http.MethodGet, "/hello-world", nil),
 			wantStatusCode: 432,
-			wantHeaders:    http.Header(map[string][]string{}),
+			wantHeader:     http.Header(map[string][]string{}),
 			wantBody:       "got request with method GET on path /hello-world",
 		},
 		{
@@ -52,7 +52,7 @@ func TestWriterSucceeds(t *testing.T) {
 			presenter: httphandler.PresenterFunc(func(r *http.Request) httphandler.Response {
 				return httphandler.Response{
 					StatusCode: 500,
-					Headers: http.Header{
+					Header: http.Header{
 						"Authorization":   []string{"Basic: lkjasldfkj:laksjdf"},
 						"Content-Type":    []string{"application/json"},
 						"multiple-values": []string{"one", "two", "three"},
@@ -62,7 +62,7 @@ func TestWriterSucceeds(t *testing.T) {
 			}),
 			request:        httptest.NewRequest(http.MethodPost, "/hey/there", nil),
 			wantStatusCode: 500,
-			wantHeaders: http.Header(map[string][]string{
+			wantHeader: http.Header(map[string][]string{
 				"Authorization":   {"Basic: lkjasldfkj:laksjdf"},
 				"Content-Type":    {"application/json"},
 				"Multiple-Values": {"one", "two", "three"},
@@ -83,7 +83,7 @@ func TestWriterSucceeds(t *testing.T) {
 			if got, want := w.Code, test.wantStatusCode; got != want {
 				t.Errorf("got status code %v, wanted %v", got, want)
 			}
-			if got, want := w.HeaderMap, test.wantHeaders; !reflect.DeepEqual(got, want) {
+			if got, want := w.HeaderMap, test.wantHeader; !reflect.DeepEqual(got, want) {
 				t.Errorf("got header mapping %#v, wanted %#v", got, want)
 			}
 			if got, want := w.Body.String(), test.wantBody; got != want {
@@ -173,7 +173,7 @@ func TestDefaultResp(t *testing.T) {
 			request:          httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 101,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got request with method GET on path /whats-up-doc"),
 			},
 		},
@@ -193,7 +193,7 @@ func TestDefaultResp(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 0,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got request with method GET on path /whats-up-doc"),
 			},
 		},
@@ -211,7 +211,7 @@ func TestDefaultResp(t *testing.T) {
 			request: httptest.NewRequest(http.MethodGet, "/whats-up-doc", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 500,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("default response!"),
 			},
 		},
@@ -228,7 +228,7 @@ func TestDefaultResp(t *testing.T) {
 			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
 				t.Errorf("got status code %v, wanted %v", got, want)
 			}
-			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+			if got, want := gotResp.Header, test.wantResp.Header; !reflect.DeepEqual(got, want) {
 				t.Errorf("got header mapping %+v, wanted %+v", got, want)
 			}
 			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
@@ -263,7 +263,7 @@ func TestDispatcher(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodGet, "/hello-there", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 100,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got request with method GET on path /hello-there"),
 			},
 		},
@@ -281,7 +281,7 @@ func TestDispatcher(t *testing.T) {
 			request:    httptest.NewRequest(http.MethodPost, "/hello-there-buddy", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 101,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got request with method POST on path /hello-there-buddy"),
 			},
 		},
@@ -291,14 +291,14 @@ func TestDispatcher(t *testing.T) {
 			notFoundFn: func(r *http.Request) httphandler.Response {
 				return httphandler.Response{
 					StatusCode: http.StatusMethodNotAllowed,
-					Headers:    nil,
+					Header:     nil,
 					Body:       []byte(fmt.Sprintf("the method %s is not allowed", r.Method)),
 				}
 			},
 			request: httptest.NewRequest(http.MethodPost, "/hello-there-buddy", nil),
 			wantResp: httphandler.Response{
 				StatusCode: http.StatusMethodNotAllowed,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("the method POST is not allowed"),
 			},
 		},
@@ -315,7 +315,7 @@ func TestDispatcher(t *testing.T) {
 			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
 				t.Errorf("got status code %v, wanted %v", got, want)
 			}
-			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+			if got, want := gotResp.Header, test.wantResp.Header; !reflect.DeepEqual(got, want) {
 				t.Errorf("got header mapping %+v, wanted %+v", got, want)
 			}
 			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
@@ -349,7 +349,7 @@ func TestErrHandler(t *testing.T) {
 			request:      httptest.NewRequest(http.MethodDelete, "/cool/path", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 1,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got DELETE request on path /cool/path"),
 			},
 			wantErrFnInvoked: false,
@@ -366,7 +366,7 @@ func TestErrHandler(t *testing.T) {
 			request:      httptest.NewRequest(http.MethodPatch, "/really/cool/path", nil),
 			wantResp: httphandler.Response{
 				StatusCode: 0,
-				Headers:    nil,
+				Header:     nil,
 				Body:       []byte("got PATCH request on path /really/cool/path"),
 			},
 			wantErrFnInvoked: true,
@@ -385,7 +385,7 @@ func TestErrHandler(t *testing.T) {
 			if got, want := gotResp.StatusCode, test.wantResp.StatusCode; got != want {
 				t.Errorf("got status code %v, wanted %v", got, want)
 			}
-			if got, want := gotResp.Headers, test.wantResp.Headers; !reflect.DeepEqual(got, want) {
+			if got, want := gotResp.Header, test.wantResp.Header; !reflect.DeepEqual(got, want) {
 				t.Errorf("got header mapping %+v, wanted %+v", got, want)
 			}
 			if got, want := string(gotResp.Body), string(test.wantResp.Body); got != want {
